@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware # <--- Add this import
 from .database import engine
-from . import models
+from . import models, auth
 from .routes import users, files, folders, sharing, search
 
 app = FastAPI(title="Distributed File Storage API")
