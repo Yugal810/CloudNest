@@ -1,19 +1,34 @@
+from dotenv import load_dotenv
+import os
+import uuid
+import boto3
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-import os
-import uuid
-import requests  # To fetch shards from nodes
 
 from ..database import get_db
 from .. import models
-from ..auth import get_current_user  # Use the centralized auth dependency
+from ..auth import get_current_user
+
+load_dotenv()
 
 router = APIRouter(prefix="/share", tags=["Sharing"])
 
-# Get the base URL from Render environment variables, fallback to local for dev
+# AWS S3 Configuration (Must match files.py)
+s3 = boto3.client(
+    's3',
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    region_name=os.getenv("AWS_REGION")
+)
+
+S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME")
 BASE_URL = os.getenv("RENDER_EXTERNAL_URL", "http://127.0.0.1:8000")
+
+# --- HELPER: Unified S3 Key Generator (Must match files.py) ---
+def get_s3_key(node: str, file_id: int, chunk_index: int):
+    return f"{node}/file_{file_id}_chunk_{chunk_index}"
 
 # --- ROUTE 1: Generate the link (Requires Login) ---
 @router.post("/{file_id}")
@@ -23,7 +38,6 @@ def generate_share_link(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # Verify file ownership
     file = db.query(models.File).filter(
         models.File.id == file_id, 
         models.File.owner_id == current_user.id
@@ -34,11 +48,10 @@ def generate_share_link(
 
     expiration = datetime.utcnow() + timedelta(hours=expires_in_hours)
     
-    # Create the unique link entry in DB
     new_link = models.SharedLink(
         file_id=file_id, 
         expires_at=expiration,
-        share_token=str(uuid.uuid4()) # Ensure token is a string UUID
+        share_token=str(uuid.uuid4())
     )
     
     db.add(new_link)
@@ -51,49 +64,43 @@ def generate_share_link(
         "filename": file.filename
     }
 
-# --- ROUTE 2: The Public Download (No Login Required) ---
+# --- ROUTE 2: The Public Download (S3 Reassembly) ---
 @router.get("/download/{token}")
-def download_shared_file(
+async def download_shared_file(
     token: str, 
     background_tasks: BackgroundTasks, 
     db: Session = Depends(get_db)
 ):
-    # 1. Validate the token and expiration
+    # 1. Validate the token
     link = db.query(models.SharedLink).filter(models.SharedLink.share_token == token).first()
-    
     if not link or link.expires_at < datetime.utcnow():
         raise HTTPException(status_code=404, detail="This link is invalid or has expired")
 
-    # 2. Get file metadata and its shards (chunks)
+    # 2. Get file metadata
     file_record = db.query(models.File).filter(models.File.id == link.file_id).first()
-    chunks = db.query(models.FileChunk).filter(
-        models.FileChunk.file_id == file_record.id
-    ).order_by(models.FileChunk.chunk_index).all()
-    
-    if not chunks:
-        raise HTTPException(status_code=404, detail="File content not found on nodes")
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File record missing")
 
-    # 3. Reassemble the file into a temporary path on the Render server
-    temp_filename = f"shared_{uuid.uuid4()}_{file_record.filename}"
+    # 3. Reassemble from S3
+    temp_filename = f"shared_temp_{uuid.uuid4()}_{file_record.filename}"
     
     try:
         with open(temp_filename, "wb") as f_out:
-            for chunk in chunks:
-                # If chunk.node is a URL (e.g., another Render service or S3)
-                if chunk.node.startswith("http"):
-                    response = requests.get(chunk.node)
-                    if response.status_code == 200:
-                        f_out.write(response.content)
-                else:
-                    # If chunk.node is a local path (for your HP laptop testing)
-                    chunk_path = os.path.join(chunk.node, f"file_{file_record.id}_chunk_{chunk.chunk_index}")
-                    if os.path.exists(chunk_path):
-                        with open(chunk_path, "rb") as f_in:
-                            f_out.write(f_in.read())
-                    else:
-                        raise HTTPException(status_code=500, detail="Shard missing on node storage")
+            # Sort chunks by index to ensure correct reassembly
+            sorted_chunks = sorted(file_record.chunks, key=lambda x: x.chunk_index)
+            
+            for chunk in sorted_chunks:
+                # Use the exact same key format as files.py
+                s3_key = get_s3_key(chunk.node, file_record.id, chunk.chunk_index)
+                
+                try:
+                    response = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)
+                    f_out.write(response['Body'].read())
+                except s3.exceptions.NoSuchKey:
+                    print(f"SHARING ERROR: Shard {s3_key} missing in S3")
+                    raise HTTPException(status_code=500, detail="Reassembly failed: Shard missing on node storage")
 
-        # 4. Serve the file and delete the temp copy after download finishes
+        # 4. Serve and Cleanup
         background_tasks.add_task(os.remove, temp_filename)
         return FileResponse(
             temp_filename, 
@@ -102,6 +109,5 @@ def download_shared_file(
         )
 
     except Exception as e:
-        if os.path.exists(temp_filename):
-            os.remove(temp_filename)
-        raise HTTPException(status_code=500, detail=f"Reassembly failed: {str(e)}")
+        if os.path.exists(temp_filename): os.remove(temp_filename)
+        raise HTTPException(status_code=500, detail=f"Download Error: {str(e)}")

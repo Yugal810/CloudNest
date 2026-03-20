@@ -7,13 +7,13 @@ import uuid
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=True) # Added for your Profile UI
+    name = Column(String, nullable=True) 
     email = Column(String, unique=True, index=True)
-    password = Column(String)
+    # CHANGE 'password' TO 'hashed_password' TO MATCH auth.py
+    hashed_password = Column(String) 
     
     folders = relationship("Folder", back_populates="owner", cascade="all, delete-orphan")
     files = relationship("File", back_populates="owner", cascade="all, delete-orphan")
-
 class Folder(Base):
     __tablename__ = "folders"
     id = Column(Integer, primary_key=True, index=True)
