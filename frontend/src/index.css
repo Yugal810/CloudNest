@@ -1,8 +1,84 @@
 @import "tailwindcss";
 
-/* You can keep your custom @layer if you want */
+/* Class-based dark mode (see src/lib/theme.js) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
-  body {
-    @apply bg-gray-50 text-gray-900;
+  html {
+    --drive-bg: #f8f9fa;
+    --drive-surface: #ffffff;
+    --drive-muted: #f8f9fa;
+    --drive-border: #dadce0;
+    --drive-text: #202124;
+    --drive-text-secondary: #5f6368;
+    --drive-placeholder: #80868b;
+    --drive-primary: #1a73e8;
+    --drive-primary-hover: #1557b0;
+    --drive-hover: #f1f3f4;
+    --drive-header: #ffffff;
+    --drive-focus-ring: #1a73e8;
+    --drive-danger: #d93025;
+    --drive-danger-hover: #c5221f;
+    --drive-danger-surface: #fce8e6;
+    --drive-success: #137333;
+    --drive-success-surface: #e6f4ea;
+    --drive-warning-icon: #b06000;
+    --drive-folder: #f9ab00;
+    --drive-overlay: rgba(0, 0, 0, 0.4);
+    --drive-blue-tint: #e8f0fe;
+    --drive-blue-tint-strong: #e8f0fe;
+    --drive-shadow: 0 1px 2px rgba(60, 64, 67, 0.08);
+    color-scheme: light;
   }
+
+  html.dark {
+    --drive-bg: #131314;
+    --drive-surface: #1e1f20;
+    --drive-muted: #2d2e30;
+    --drive-border: #3c4043;
+    --drive-text: #e8eaed;
+    --drive-text-secondary: #9aa0a6;
+    --drive-placeholder: #80868b;
+    --drive-primary: #8ab4f8;
+    --drive-primary-hover: #aecbfa;
+    --drive-hover: #2d2e30;
+    --drive-header: #1e1f20;
+    --drive-focus-ring: #8ab4f8;
+    --drive-danger: #f28b82;
+    --drive-danger-hover: #e8716a;
+    --drive-danger-surface: #3c1f1e;
+    --drive-success: #81c995;
+    --drive-success-surface: #1e3a2f;
+    --drive-warning-icon: #fdd663;
+    --drive-folder: #fdd663;
+    --drive-overlay: rgba(0, 0, 0, 0.55);
+    --drive-blue-tint: #1a2332;
+    --drive-blue-tint-strong: #1e2a3d;
+    --drive-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+
+  html.drive-reduce-motion *,
+  html.drive-reduce-motion *::before,
+  html.drive-reduce-motion *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  body {
+    @apply antialiased;
+    background-color: var(--drive-bg);
+    color: var(--drive-text);
+  }
+}
+
+/* Compact density: tighter main padding via data attribute on html */
+html[data-density="compact"] .drive-main-padding {
+  @apply px-3 py-3 sm:p-4;
+}
+
+html:not([data-density="compact"]) .drive-main-padding {
+  @apply px-3 py-4 sm:p-8;
 }
