@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import api from '../api';
+import axios from 'axios'; // Import direct axios instance for streaming fragments directly to S3
 import { getStoredTheme, setStoredTheme, applyTheme } from '../lib/theme';
 import {
     getCompactUi,
@@ -13,8 +14,9 @@ import ShortcutsModal from '../components/ShortcutsModal';
 import HelpModal from '../components/HelpModal';
 import { 
   Folder, HardDrive, LogOut, Plus, Upload,
-  ChevronRight, FileText, Trash2, Download, Loader2,
+  ChevronRight, Trash2, Download, Loader2,
   ChevronDown, Search, X, Share2, Move, FolderPlus, Copy, ExternalLink, AlertTriangle, ArrowRight, CheckSquare, Square,
+  Image, Video, FileText, Code, File
 } from 'lucide-react';
 
 export default function Dashboard({ logout }) {
@@ -24,6 +26,8 @@ export default function Dashboard({ logout }) {
     const [selectedFolder, setSelectedFolder] = useState(null);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0); // Real-time upload percentage
+    const [uploadingSize, setUploadingSize] = useState(""); // Readable string representation of file size
     const [showProfile, setShowProfile] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     /** When true, search results dropdown is visible (hidden on outside click) */
@@ -40,7 +44,7 @@ export default function Dashboard({ logout }) {
 
     // --- MODAL & ERROR STATES ---
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
-    const [isMoveConfirmOpen, setIsMoveConfirmOpen] = useState(false); // New Move Confirmation
+    const [isMoveConfirmOpen, setIsMoveConfirmOpen] = useState(false); 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -48,7 +52,7 @@ export default function Dashboard({ logout }) {
     const [newFolderName, setNewFolderName] = useState("");
     /** Files queued for move (one or many); each { id, name } */
     const [filesPendingMove, setFilesPendingMove] = useState([]);
-    const [targetFolder, setTargetFolder] = useState(null); // Stores {id, name} of destination
+    const [targetFolder, setTargetFolder] = useState(null); 
     /** Items to delete: { id, name, type }[] */
     const [deleteTargets, setDeleteTargets] = useState([]);
     const [shareUrl, setShareUrl] = useState("");
@@ -124,7 +128,6 @@ export default function Dashboard({ logout }) {
         persistReduceMotionPreference(v);
     };
 
-    /** Logo / brand: reset to Home and scroll to top of drive (same page content, not duplicate nav) */
     const goDriveHome = () => {
         setSelectedFolder(null);
         setSearchQuery("");
@@ -166,7 +169,6 @@ export default function Dashboard({ logout }) {
     };
 
     // --- MOVE LOGIC ---
-    /** Drag-drop onto folder/home: confirm move for one file */
     const beginMoveWithDestination = (fileId, fileName, targetId, targetName) => {
         setFilesPendingMove([{ id: fileId, name: fileName }]);
         setTargetFolder({ id: targetId, name: targetName || "Home" });
@@ -300,7 +302,6 @@ export default function Dashboard({ logout }) {
         return crumbs;
     };
 
-    /** Main grid: always reflects current folder only (not affected by search) */
     const filteredFolders = folders.filter(f => selectedFolder ? f.parent_id === selectedFolder.id : f.parent_id === null);
 
     const filteredFiles = files.filter(f => {
@@ -308,7 +309,6 @@ export default function Dashboard({ logout }) {
         return f.folder_id === null || f.folder_id === undefined;
     });
 
-    /** Search dropdown: global matches across all folders & files */
     const searchTrim = searchQuery.trim();
     const { searchFolderHits, searchFileHits } = useMemo(() => {
         if (!searchTrim) return { searchFolderHits: [], searchFileHits: [] };
@@ -319,7 +319,6 @@ export default function Dashboard({ logout }) {
         };
     }, [searchTrim, folders, files]);
 
-    /** Full path from Home to this folder, e.g. "Home / Documents / Work" */
     const getFolderPathString = (folder) => {
         if (!folder) return "Home";
         const names = [];
@@ -334,7 +333,6 @@ export default function Dashboard({ logout }) {
         return ["Home", ...names].join(" / ");
     };
 
-    /** Full path including file name, e.g. "Home / Docs / report.pdf" */
     const getFilePathString = (file) => {
         const name = file.name || file.filename;
         const parent =
@@ -360,18 +358,66 @@ export default function Dashboard({ logout }) {
         setSearchDropdownOpen(false);
     };
 
+    // --- 🚀 DYNAMIC MULTIPART DIRECT AWS SHARD UPLOAD ENGINE (Bypasses 512MB RAM Ceiling) ---
     const handleUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
         setUploading(true);
-        const formData = new FormData();
-        formData.append('file', file);
+        setUploadProgress(0);
+
+        // Track readable string sizing
+        const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+        setUploadingSize(`${sizeInMB} MB`);
+
+        const CHUNK_SIZE = 1024 * 1024; // Strict 1MB Shard slices
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
         try {
-            const folderParam = selectedFolder ? `?folder_id=${selectedFolder.id}` : '';
-            await api.post(`/upload${folderParam}`, formData);
+            // Step 1: Tell backend to map an isolated database file record with mime_type tracking
+            const initResponse = await api.post('/files/upload/init', {
+                filename: file.name,
+                size: file.size,
+                mime_type: file.type || "application/octet-stream",
+                folder_id: selectedFolder ? selectedFolder.id : null
+            });
+
+            const { file_id } = initResponse.data;
+
+            // Step 2: Loop chunks, parse slices, stream straight to AWS S3 bypassing Render disk thresholds
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, file.size);
+                const fileChunk = file.slice(start, end); // Local client-side browser slicing execution
+
+                // Request shard authorization signature mapping metadata
+                const urlResponse = await api.post('/files/upload/chunk-url', {
+                    file_id: file_id,
+                    chunk_index: i
+                });
+
+                const { upload_url } = urlResponse.data;
+
+                // Push shard raw chunk directly into AWS infrastructure array edge
+                await axios.put(upload_url, fileChunk, {
+                    headers: { "Content-Type": "application/octet-stream" }
+                });
+
+                // Update real-time fluid progression bar states
+                const progressPercent = Math.round(((i + 1) / totalChunks) * 100);
+                setUploadProgress(progressPercent);
+            }
+
             fetchData();
-        } catch (err) { console.error("Upload failed"); } 
-        finally { setUploading(false); }
+            alert("Distributed cluster sharded upload executed successfully!");
+        } catch (err) { 
+            console.error("High-scale direct upload pipeline collapsed: ", err); 
+            alert("Scale upload execution aborted. Check configuration environment logs.");
+        } finally { 
+            setUploading(false);
+            setUploadProgress(0);
+            setUploadingSize("");
+        }
     };
 
     const downloadFile = (file) => {
@@ -384,6 +430,48 @@ export default function Dashboard({ logout }) {
             a.click();
             window.URL.revokeObjectURL(url);
         }).catch(() => {});
+    };
+
+    // --- 🖼️ DYNAMIC MULTI-MIME COMPONENT THUMBNAIL ENGINE ---
+    const renderFileThumbnail = (file) => {
+        const mimeType = file.mime_type || "";
+        
+        // Since chunks are isolated across object storage nodes, map type identities to discrete visual vectors
+        if (mimeType.startsWith("image/")) {
+            return (
+                <div className="p-2.5 rounded-md bg-emerald-50 text-emerald-600 pointer-events-none transition-transform group-hover:scale-105">
+                    <Image size={22} strokeWidth={2} />
+                </div>
+            );
+        }
+        if (mimeType.startsWith("video/")) {
+            return (
+                <div className="p-2.5 rounded-md bg-purple-50 text-purple-600 pointer-events-none transition-transform group-hover:scale-105">
+                    <Video size={22} strokeWidth={2} />
+                </div>
+            );
+        }
+        if (mimeType.includes("javascript") || mimeType.includes("json") || mimeType.includes("html") || mimeType.includes("python")) {
+            return (
+                <div className="p-2.5 rounded-md bg-amber-50 text-amber-600 pointer-events-none transition-transform group-hover:scale-105">
+                    <Code size={22} strokeWidth={2} />
+                </div>
+            );
+        }
+        if (mimeType === "application/pdf") {
+            return (
+                <div className="p-2.5 rounded-md bg-rose-50 text-rose-600 pointer-events-none transition-transform group-hover:scale-105">
+                    <FileText size={22} strokeWidth={2} />
+                </div>
+            );
+        }
+        
+        // General asset document default fallback structure card icon
+        return (
+            <div className="p-2.5 rounded-md bg-[#e8f0fe] text-[#1a73e8] pointer-events-none transition-transform group-hover:scale-105">
+                <File size={22} strokeWidth={2} />
+            </div>
+        );
     };
 
     if (loading) return (
@@ -584,7 +672,6 @@ export default function Dashboard({ logout }) {
 
                 <div className="mb-6 sm:mb-8 min-w-0">
                     <div className="flex items-center gap-1 text-sm overflow-x-auto overflow-y-hidden pb-1 -mx-1 px-1 touch-pan-x w-full [scrollbar-width:thin]" style={{ WebkitOverflowScrolling: 'touch' }}>
-                        {/* --- IMPROVED HOME DROP TARGET --- */}
                         <span 
                             className="shrink-0 px-3 py-2 sm:py-1.5 rounded-md text-[#1a73e8] hover:bg-[#e8f0fe] cursor-pointer font-medium transition-colors touch-manipulation min-h-[44px] sm:min-h-0 inline-flex items-center" 
                             onClick={() => setSelectedFolder(null)}
@@ -673,16 +760,31 @@ export default function Dashboard({ logout }) {
                                     </button>
                                 )}
                             </div>
-                            <div className="flex w-full flex-wrap justify-end sm:w-auto">
+                            
+                            {/* 📊 UPDATED CONTROLS GRID PANEL BLOCK */}
+                            <div className="flex w-full flex-col items-end gap-2 sm:w-auto">
                                 <button
                                     type="button"
                                     onClick={() => uploadInputRef.current?.click()}
                                     disabled={uploading}
-                                    className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium text-white transition-colors touch-manipulation min-h-[44px] disabled:cursor-wait disabled:opacity-70 sm:w-auto sm:min-h-0 bg-[#1a73e8] hover:bg-[#1557b0] active:bg-[#1557b0] shadow-sm disabled:bg-[#bdc1c6]"
+                                    className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium text-white transition-colors touch-manipulation min-h-[44px] disabled:cursor-wait disabled:opacity-90 sm:w-auto sm:min-h-0 bg-[#1a73e8] hover:bg-[#1557b0] active:bg-[#1557b0] shadow-sm disabled:bg-[#bdc1c6]"
                                 >
                                     {uploading ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} strokeWidth={2} />}
-                                    {uploading ? "Uploading…" : "Add files"}
+                                    {uploading ? `Uploading ${uploadingSize}...` : "Add files"}
                                 </button>
+                                
+                                {/* 📊 RUNTIME VISUAL PERCENTAGE PROGRESS TRACKER */}
+                                {uploading && (
+                                    <div className="w-full sm:w-64 mt-1 bg-gray-100 rounded-full h-2.5 overflow-hidden border border-gray-200 shadow-inner">
+                                        <div 
+                                            className="bg-gradient-to-r from-blue-500 to-[#1a73e8] h-2.5 rounded-full transition-all duration-300 ease-out animate-pulse"
+                                            style={{ width: `${uploadProgress}%` }}
+                                        ></div>
+                                        <span className="text-[10px] text-[#5f6368] font-bold mt-1 block text-right tabular-nums">
+                                            {uploadProgress}% Complete
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         {selectedFileIds.length > 0 && (
@@ -760,32 +862,34 @@ export default function Dashboard({ logout }) {
                                                 e.currentTarget.style.opacity = "0.4";
                                             }}
                                             onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; }}
-                                            className={`relative rounded-lg border bg-white transition-colors select-none touch-manipulation md:cursor-grab md:active:cursor-grabbing ${
-                                                menuOpen ? "border-[#1a73e8] shadow-md ring-1 ring-[#1a73e8]/30 z-[25]" : isSelected ? "border-[#1a73e8] bg-[#f8fbff] ring-1 ring-[#1a73e8]/20" : "border-[#dadce0] active:bg-[#f8f9fa] md:hover:bg-[#f8f9fa] md:hover:border-[#bdc1c6]"
+                                            className={`group relative rounded-lg border bg-white transition-all select-none touch-manipulation md:cursor-grab md:active:cursor-grabbing ${
+                                                menuOpen ? "border-[#1a73e8] shadow-md ring-1 ring-[#1a73e8]/30 z-[25]" : isSelected ? "border-[#1a73e8] bg-[#f8fbff] ring-1 ring-[#1a73e8]/20" : "border-[#dadce0] active:bg-[#f8f9fa] md:hover:bg-[#f8f9fa] md:hover:border-[#bdc1c6] md:hover:shadow-sm"
                                             }`}
                                         >
                                             <button
                                                 type="button"
                                                 aria-label={isSelected ? "Deselect file" : "Select file"}
-                                                className="absolute left-1.5 top-1.5 z-[30] rounded p-1 text-[#1a73e8] hover:bg-[#e8f0fe] touch-manipulation"
+                                                className="absolute left-1.5 top-1.5 z-[30] rounded p-1 text-[#1a73e8] hover:bg-[#e8f0fe] touch-manipulation opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity"
                                                 onClick={(e) => toggleFileSelection(file.id, e)}
                                             >
                                                 {isSelected ? (
                                                     <CheckSquare size={18} strokeWidth={2} className="fill-[#e8f0fe]" />
                                                 ) : (
-                                                    <Square size={18} strokeWidth={2} className="text-[#bdc1c6]" />
+                                                    <Square size={18} strokeWidth={2} className="text-[#bdc1c6] bg-white" />
                                                 )}
                                             </button>
                                             <button
                                                 type="button"
-                                                className="w-full flex flex-col items-center gap-1 p-2 pt-3 pb-2 text-center min-h-[88px] sm:min-h-[76px] cursor-pointer touch-manipulation"
+                                                className="w-full flex flex-col items-center gap-1 p-2 pt-4 pb-2 text-center min-h-[96px] sm:min-h-[84px] cursor-pointer touch-manipulation outline-none"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     setFileActionsOpenId((prev) => (prev === file.id ? null : file.id));
                                                 }}
                                             >
-                                                <div className="p-1.5 rounded-md bg-[#e8f0fe] text-[#1a73e8] pointer-events-none"><FileText size={20} strokeWidth={2} /></div>
-                                                <span className="text-[11px] sm:text-xs font-medium text-[#202124] line-clamp-2 w-full break-words leading-snug" title={displayName}>
+                                                {/* 🖼️ INTEGRATED DYNAMIC DENSITY HIGH-FIDELITY THUMBNAIL CALL */}
+                                                {renderFileThumbnail(file)}
+                                                
+                                                <span className="text-[11px] sm:text-xs font-medium text-[#202124] line-clamp-2 w-full break-words leading-snug mt-1" title={displayName}>
                                                     {displayName}
                                                 </span>
                                             </button>
