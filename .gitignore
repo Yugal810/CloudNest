@@ -6,5 +6,7 @@
 # Ignore everything in storage_nodes
 storage_nodes/*
 
+test_aws.py
+
 # EXCEPT the .gitkeep files (this is the magic part)
 !storage_nodes/**/.gitkeep
