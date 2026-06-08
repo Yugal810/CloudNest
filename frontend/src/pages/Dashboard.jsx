@@ -744,7 +744,7 @@ export default function Dashboard({ logout }) {
                 <section ref={overviewRef} id="drive-overview" className="mb-6 sm:mb-8 scroll-mt-24 rounded-lg border border-[#dadce0] bg-white shadow-sm p-4 sm:p-8">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
                         <div>
-                            <h1 className="text-2xl sm:text-[28px] font-normal text-[#202124] tracking-tight">My Drive</h1>
+                            <h1 className="text-2xl sm:text-[28px] font-normal text-[#202124] tracking-tight">My Space</h1>
                             <p className="text-sm text-[#5f6368] mt-1">Store, organize, and share your files.</p>
                         </div>
                         <div className="flex flex-wrap gap-3">
