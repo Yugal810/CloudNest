@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 import os
 import boto3
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -25,6 +25,23 @@ s3 = boto3.client(
 )
 
 S3_BUCKET = os.getenv("AWS_S3_BUCKET_NAME")
+
+
+def _require_s3_config():
+    missing = [
+        name for name, value in [
+            ("AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID")),
+            ("AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY")),
+            ("AWS_S3_BUCKET_NAME", S3_BUCKET),
+        ]
+        if not value
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AWS S3 is not configured. Set: {', '.join(missing)}",
+        )
+
 
 # --- Request Schemas ---
 class FileInitRequest(BaseModel):
@@ -111,6 +128,8 @@ def generate_chunk_url(
     if not db_file:
         raise HTTPException(status_code=404, detail="File context registration not found")
 
+    _require_s3_config()
+
     # Re-evaluate dynamic nodes matching the record's size layout
     active_nodes = get_allocated_nodes(db_file.size)
     node = active_nodes[request.chunk_index % len(active_nodes)]
@@ -138,6 +157,46 @@ def generate_chunk_url(
 
         return {"upload_url": presigned_url, "node": node}
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- 2b. UPLOAD SHARD VIA BACKEND (avoids browser S3 CORS issues) ---
+@router.post("/upload/chunk")
+async def upload_chunk(
+    file_id: int = Form(...),
+    chunk_index: int = Form(...),
+    chunk: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    db_file = db.query(models.File).filter(
+        models.File.id == file_id,
+        models.File.owner_id == current_user.id,
+    ).first()
+
+    if not db_file:
+        raise HTTPException(status_code=404, detail="File context registration not found")
+
+    _require_s3_config()
+
+    active_nodes = get_allocated_nodes(db_file.size)
+    node = active_nodes[chunk_index % len(active_nodes)]
+    s3_key = get_s3_key(node, db_file.id, chunk_index)
+
+    try:
+        body = await chunk.read()
+        s3.put_object(Bucket=S3_BUCKET, Key=s3_key, Body=body)
+
+        existing = db.query(models.FileChunk).filter(
+            models.FileChunk.file_id == file_id,
+            models.FileChunk.chunk_index == chunk_index,
+        ).first()
+        if not existing:
+            db.add(models.FileChunk(file_id=file_id, chunk_index=chunk_index, node=node))
+        db.commit()
+
+        return {"message": "Shard stored", "node": node}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

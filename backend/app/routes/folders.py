@@ -73,6 +73,7 @@ def get_user_storage_explorer(
                 "name": file.filename, 
                 "folder_id": file.folder_id,
                 "size": file.size,
+                "mime_type": file.mime_type,
                 "created_at": file.created_at
             } for file in files if file.folder_id is not None
         ],
@@ -80,7 +81,8 @@ def get_user_storage_explorer(
             {
                 "id": file.id, 
                 "name": file.filename,
-                "size": file.size
+                "size": file.size,
+                "mime_type": file.mime_type,
             } for file in files if file.folder_id is None
         ]
     }

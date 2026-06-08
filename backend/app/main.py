@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware # <--- Add this import
+from sqlalchemy import text, inspect
 from .database import engine
 from . import models, auth
 from .routes import users, files, folders, sharing, search
@@ -22,9 +23,18 @@ app.add_middleware(
     allow_headers=["*"], # Allows Authorization headers
 )
 
-# Create tables
-
+# Create tables and apply lightweight schema patches for existing deployments
 models.Base.metadata.create_all(bind=engine)
+
+def _ensure_schema_columns():
+    inspector = inspect(engine)
+    if "files" in inspector.get_table_names():
+        column_names = {col["name"] for col in inspector.get_columns("files")}
+        if "mime_type" not in column_names:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE files ADD COLUMN mime_type VARCHAR"))
+
+_ensure_schema_columns()
 
 # Register routers
 app.include_router(auth.router)
@@ -37,3 +47,32 @@ app.include_router(search.router)
 @app.get("/")
 def root():
     return {"message": "Distributed File Storage API running"}
+
+
+@app.get("/health")
+def health_check():
+    """Quick deployment check — DB connectivity and required env vars."""
+    import os
+    from sqlalchemy import text
+
+    db_ok = False
+    db_error = None
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception as exc:
+        db_error = str(exc)
+
+    aws_vars = {
+        "AWS_ACCESS_KEY_ID": bool(os.getenv("AWS_ACCESS_KEY_ID")),
+        "AWS_SECRET_ACCESS_KEY": bool(os.getenv("AWS_SECRET_ACCESS_KEY")),
+        "AWS_REGION": bool(os.getenv("AWS_REGION")),
+        "AWS_S3_BUCKET_NAME": bool(os.getenv("AWS_S3_BUCKET_NAME")),
+    }
+
+    return {
+        "status": "ok" if db_ok and all(aws_vars.values()) else "degraded",
+        "database": {"connected": db_ok, "error": db_error},
+        "aws_env": aws_vars,
+    }

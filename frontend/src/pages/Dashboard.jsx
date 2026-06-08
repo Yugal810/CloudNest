@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import api from '../api';
-import axios from 'axios'; // Import direct axios instance for streaming fragments directly to S3
 import { getStoredTheme, setStoredTheme, applyTheme } from '../lib/theme';
 import {
     getCompactUi,
@@ -375,7 +374,7 @@ export default function Dashboard({ logout }) {
 
         try {
             // Step 1: Tell backend to map an isolated database file record with mime_type tracking
-            const initResponse = await api.post('/files/upload/init', {
+            const initResponse = await api.post('/upload/init', {
                 filename: file.name,
                 size: file.size,
                 mime_type: file.type || "application/octet-stream",
@@ -390,18 +389,13 @@ export default function Dashboard({ logout }) {
                 const end = Math.min(start + CHUNK_SIZE, file.size);
                 const fileChunk = file.slice(start, end); // Local client-side browser slicing execution
 
-                // Request shard authorization signature mapping metadata
-                const urlResponse = await api.post('/files/upload/chunk-url', {
-                    file_id: file_id,
-                    chunk_index: i
-                });
+                // Stream shard through backend to S3 (avoids browser CORS blocks on presigned URLs)
+                const formData = new FormData();
+                formData.append("file_id", String(file_id));
+                formData.append("chunk_index", String(i));
+                formData.append("chunk", fileChunk, `chunk_${i}`);
 
-                const { upload_url } = urlResponse.data;
-
-                // Push shard raw chunk directly into AWS infrastructure array edge
-                await axios.put(upload_url, fileChunk, {
-                    headers: { "Content-Type": "" }
-                });
+                await api.post("/upload/chunk", formData);
 
                 // Update real-time fluid progression bar states
                 const progressPercent = Math.round(((i + 1) / totalChunks) * 100);
@@ -411,8 +405,14 @@ export default function Dashboard({ logout }) {
             fetchData();
             alert("Distributed cluster sharded upload executed successfully!");
         } catch (err) { 
-            console.error("High-scale direct upload pipeline collapsed: ", err); 
-            alert("Scale upload execution aborted. Check configuration environment logs.");
+            console.error("High-scale direct upload pipeline collapsed: ", err);
+            const detail = err.response?.data?.detail;
+            const message = typeof detail === "string"
+                ? detail
+                : Array.isArray(detail)
+                    ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
+                    : err.message || "Upload failed.";
+            alert(`Upload failed: ${message}`);
         } finally { 
             setUploading(false);
             setUploadProgress(0);

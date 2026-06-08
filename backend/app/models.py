@@ -38,7 +38,8 @@ class File(Base):
     filename = Column(String)
     owner_id = Column(Integer, ForeignKey("users.id"))
     folder_id = Column(Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=True)
-    size = Column(Integer, nullable=True) 
+    size = Column(Integer, nullable=True)
+    mime_type = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", back_populates="files")
