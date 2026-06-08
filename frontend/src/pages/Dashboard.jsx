@@ -980,11 +980,11 @@ export default function Dashboard({ logout }) {
             />
             <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
             <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
-
+            
             {/* --- MOVE CONFIRMATION MODAL --- */}
             {isMoveConfirmOpen && (
                 <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 pb-[env(safe-area-inset-bottom)]">
-                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden p-6 max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
+                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden p-6 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-start mb-4">
                             <div className="p-2 bg-[#e8f0fe] text-[#1a73e8] rounded-lg"><Move size={22} strokeWidth={2} /></div>
                             <button type="button" onClick={() => { setIsMoveConfirmOpen(false); setFilesPendingMove([]); }} className="text-[#5f6368] hover:bg-[#f1f3f4] rounded-full p-1"><X size={20} /></button>
@@ -1003,8 +1003,8 @@ export default function Dashboard({ logout }) {
                             <span className="text-xs text-[#5f6368]">Destination: <span className="font-medium text-[#202124]">{targetFolder?.name}</span></span>
                         </div>
                         <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-4 sm:justify-end">
-                            <button type="button" onClick={() => { setIsMoveConfirmOpen(false); setFilesPendingMove([]); }} className="w-full sm:w-auto px-4 py-3 sm:py-2 rounded-md border border-[#dadce0] text-sm font-medium text-[#202124] hover:bg-[#f8f9fa] transition-colors touch-manipulation min-h-[44px] sm:min-h-0">Cancel</button>
-                            <button type="button" onClick={handleMoveExecution} className="w-full sm:w-auto px-4 py-3 sm:py-2 rounded-md bg-[#1a73e8] text-white text-sm font-medium hover:bg-[#1557b0] transition-colors touch-manipulation min-h-[44px] sm:min-h-0">Move</button>
+                            <button type="button" onClick={() => { setIsMoveConfirmOpen(false); setFilesPendingMove([]); }} className="w-full sm:w-auto px-4 py-3 sm:py-2 rounded-md border border-[#dadce0] text-sm font-medium text-[#202124] hover:bg-[#f8f9fa] min-h-[44px] sm:min-h-0">Cancel</button>
+                            <button type="button" onClick={handleMoveExecution} className="w-full sm:w-auto px-4 py-3 sm:py-2 rounded-md bg-[#1a73e8] text-white text-sm font-medium hover:bg-[#1557b0] min-h-[44px] sm:min-h-0">Move</button>
                         </div>
                     </div>
                 </div>
@@ -1013,7 +1013,7 @@ export default function Dashboard({ logout }) {
             {/* --- MOVE SELECTION MODAL --- */}
             {isMoveModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 pb-[env(safe-area-inset-bottom)]">
-                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden animate-in zoom-in-95 max-h-[90vh] flex flex-col">
+                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden max-h-[90vh] flex flex-col">
                         <div className="px-6 py-4 border-b border-[#dadce0] flex justify-between items-center bg-[#f8f9fa]">
                             <div>
                                 <h2 className="text-lg font-medium text-[#202124]">Move to…</h2>
@@ -1022,20 +1022,17 @@ export default function Dashboard({ logout }) {
                             <button type="button" onClick={() => { setIsMoveModalOpen(false); setFilesPendingMove([]); }} className="p-2 hover:bg-[#e8eaed] rounded-full text-[#5f6368]"><X size={20} /></button>
                         </div>
                         <div className="p-4 sm:p-6 overflow-y-auto min-h-0 flex-1">
-                            {filesPendingMove.length > 1 && (
-                                <p className="text-xs text-[#5f6368] mb-3">Moving {filesPendingMove.length} files to the folder you pick.</p>
-                            )}
                             <div className="relative mb-4">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5f6368]" size={18} />
-                                <input type="search" enterKeyHint="search" placeholder="Search folders" className="w-full pl-10 pr-3 py-3 sm:py-2 bg-[#f1f3f4] border border-transparent rounded-lg text-base sm:text-sm text-[#202124] outline-none focus:bg-white focus:border-[#1a73e8]" value={folderSearch} onChange={(e) => setFolderSearch(e.target.value)} />
+                                <input type="search" placeholder="Search folders" className="w-full pl-10 pr-3 py-2 bg-[#f1f3f4] border border-transparent rounded-lg text-sm text-[#202124] outline-none focus:bg-white focus:border-[#1a73e8]" value={folderSearch} onChange={(e) => setFolderSearch(e.target.value)} />
                             </div>
-                            <div className="max-h-[40vh] sm:max-h-64 overflow-y-auto space-y-1 pr-1">
-                                <button type="button" onClick={() => selectMoveDestination(null, "Home")} className="w-full flex items-center gap-3 p-3 sm:p-3 min-h-[48px] hover:bg-[#e8f0fe] rounded-lg transition-colors border border-dashed border-[#dadce0] text-left touch-manipulation">
-                                    <HardDrive className="text-[#1a73e8]" size={20} strokeWidth={2} />
+                            <div className="max-h-64 overflow-y-auto space-y-1">
+                                <button type="button" onClick={() => selectMoveDestination(null, "Home")} className="w-full flex items-center gap-3 p-3 hover:bg-[#e8f0fe] rounded-lg border border-dashed text-left">
+                                    <HardDrive className="text-[#1a73e8]" size={20} />
                                     <span className="text-sm font-medium text-[#202124]">My Drive (Home)</span>
                                 </button>
                                 {folders.filter(f => f.name.toLowerCase().includes(folderSearch.toLowerCase())).map(folder => (
-                                    <button type="button" key={folder.id} onClick={() => selectMoveDestination(folder.id, folder.name)} className="w-full flex items-center gap-3 p-3 min-h-[48px] hover:bg-[#f1f3f4] rounded-lg transition-colors text-left group touch-manipulation">
+                                    <button type="button" key={folder.id} onClick={() => selectMoveDestination(folder.id, folder.name)} className="w-full flex items-center gap-3 p-3 hover:bg-[#f1f3f4] rounded-lg text-left group">
                                         <Folder className="text-[#f9ab00]" fill="currentColor" size={22} />
                                         <span className="text-sm font-medium text-[#202124] group-hover:text-[#1a73e8]">{folder.name}</span>
                                     </button>
@@ -1049,36 +1046,19 @@ export default function Dashboard({ logout }) {
             {/* --- SHARE MODAL --- */}
             {isShareModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 pb-[env(safe-area-inset-bottom)]">
-                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden p-6 max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
+                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden p-6 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-start mb-4">
                             <div className="p-2 bg-[#e6f4ea] text-[#137333] rounded-lg"><Share2 size={22} strokeWidth={2} /></div>
                             <button type="button" onClick={() => { setIsShareModalOpen(false); setBatchShareLinks(null); }} className="text-[#5f6368] hover:bg-[#f1f3f4] rounded-full p-1"><X size={20} /></button>
                         </div>
                         <h2 className="text-lg font-medium text-[#202124] mb-1">{batchShareLinks?.length ? "Get links" : "Get link"}</h2>
-                        <p className="text-sm text-[#5f6368] mb-4">{batchShareLinks?.length ? "Anyone with a link can view that file." : "Anyone with the link can view the file."}</p>
-                        {batchShareLinks?.length ? (
-                            <ul className="space-y-3 mb-2 max-h-[50vh] overflow-y-auto pr-1">
-                                {batchShareLinks.map((row, idx) => (
-                                    <li key={idx} className="rounded-lg border border-[#dadce0] bg-[#f8f9fa] p-3">
-                                        <p className="text-xs font-medium text-[#202124] truncate mb-2" title={row.name}>{row.name}</p>
-                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                            <input readOnly value={row.url} className="flex-1 bg-white px-2 py-2 text-xs text-[#202124] outline-none min-w-0 rounded border border-[#dadce0] break-all" />
-                                            <button type="button" onClick={() => navigator.clipboard.writeText(row.url)} className="p-2 text-[#1a73e8] hover:bg-[#e8f0fe] rounded-md shrink-0 touch-manipulation min-h-[40px]" title="Copy"><Copy size={18} /></button>
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <>
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 bg-[#f8f9fa] rounded-lg border border-[#dadce0] mb-4">
-                                    <input readOnly value={shareUrl} className="flex-1 bg-transparent px-2 py-2 text-sm text-[#202124] outline-none min-w-0 break-all sm:truncate" />
-                                    <button type="button" onClick={() => navigator.clipboard.writeText(shareUrl)} className="p-3 sm:p-2 text-[#1a73e8] hover:bg-[#e8f0fe] rounded-md transition-colors shrink-0 touch-manipulation min-h-[44px] sm:min-h-0" title="Copy"><Copy size={18} /></button>
-                                </div>
-                                <a href={shareUrl} target="_blank" rel="noreferrer" className="w-full bg-[#1a73e8] text-white py-3 sm:py-2.5 rounded-md text-sm font-medium hover:bg-[#1557b0] transition-colors flex justify-center items-center gap-2 touch-manipulation min-h-[44px] sm:min-h-0">
-                                   <ExternalLink size={18} /> Open link
-                                </a>
-                            </>
-                        )}
+                        <div className="flex items-center gap-2 p-2 bg-[#f8f9fa] rounded-lg border border-[#dadce0] mb-4">
+                            <input readOnly value={shareUrl} className="flex-1 bg-transparent px-2 py-2 text-sm text-[#202124] outline-none min-w-0 truncate" />
+                            <button type="button" onClick={() => navigator.clipboard.writeText(shareUrl)} className="p-2 text-[#1a73e8] hover:bg-[#e8f0fe] rounded-md transition-colors" title="Copy"><Copy size={18} /></button>
+                        </div>
+                        <a href={shareUrl} target="_blank" rel="noreferrer" className="w-full bg-[#1a73e8] text-white py-2 rounded-md text-sm font-medium hover:bg-[#1557b0] transition-colors flex justify-center items-center gap-2">
+                           <ExternalLink size={18} /> Open link
+                        </a>
                     </div>
                 </div>
             )}
@@ -1086,22 +1066,16 @@ export default function Dashboard({ logout }) {
             {/* --- DELETE CONFIRMATION --- */}
             {isDeleteModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 pb-[env(safe-area-inset-bottom)]">
-                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden p-6 max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
+                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden p-6 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-start mb-4">
                             <div className="p-2 bg-[#fce8e6] text-[#d93025] rounded-lg"><AlertTriangle size={22} strokeWidth={2} /></div>
                             <button type="button" onClick={() => { setIsDeleteModalOpen(false); setDeleteTargets([]); }} className="text-[#5f6368] hover:bg-[#f1f3f4] rounded-full p-1"><X size={20} /></button>
                         </div>
                         <h2 className="text-lg font-medium text-[#202124] mb-2">Delete forever?</h2>
-                        <p className="text-sm text-[#5f6368] mb-6">
-                            {deleteTargets.length > 1 ? (
-                                <>This will remove <span className="font-medium text-[#202124]">{deleteTargets.length} items</span> from your Drive.</>
-                            ) : (
-                                <>This will remove <span className="font-medium text-[#202124]">"{deleteTargets[0]?.name}"</span> from your Drive.</>
-                            )}
-                        </p>
+                        <p className="text-sm text-[#5f6368] mb-6">This will remove <span className="font-medium text-[#202124]">"{deleteTargets[0]?.name}"</span> from your Drive.</p>
                         <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-4 sm:justify-end">
-                            <button type="button" onClick={() => { setIsDeleteModalOpen(false); setDeleteTargets([]); }} className="w-full sm:w-auto px-4 py-3 sm:py-2 rounded-md border border-[#dadce0] text-sm font-medium text-[#202124] hover:bg-[#f8f9fa] touch-manipulation min-h-[44px] sm:min-h-0">Cancel</button>
-                            <button type="button" onClick={handleDelete} className="w-full sm:w-auto px-4 py-3 sm:py-2 rounded-md bg-[#d93025] text-white text-sm font-medium hover:bg-[#c5221f] touch-manipulation min-h-[44px] sm:min-h-0">Delete</button>
+                            <button type="button" onClick={() => { setIsDeleteModalOpen(false); setDeleteTargets([]); }} className="w-full sm:w-auto px-4 py-2 rounded-md border text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                            <button type="button" onClick={handleDelete} className="w-full sm:w-auto px-4 py-2 rounded-md bg-[#d93025] text-white text-sm font-medium hover:bg-[#c5221f]">Delete</button>
                         </div>
                     </div>
                 </div>
@@ -1110,7 +1084,7 @@ export default function Dashboard({ logout }) {
             {/* --- CREATE MODAL --- */}
             {isCreateModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 pb-[env(safe-area-inset-bottom)]">
-                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden animate-in zoom-in-95 p-6 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-white w-full max-w-md rounded-t-xl sm:rounded-lg shadow-xl border border-[#dadce0] overflow-hidden p-6 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-start mb-4">
                             <div className="p-2 bg-[#e8f0fe] text-[#1a73e8] rounded-lg"><FolderPlus size={22} strokeWidth={2} /></div>
                             <button type="button" onClick={() => setIsCreateModalOpen(false)} className="text-[#5f6368] hover:bg-[#f1f3f4] rounded-full p-1"><X size={20} /></button>
