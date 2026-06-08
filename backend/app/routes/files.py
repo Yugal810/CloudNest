@@ -122,8 +122,7 @@ def generate_chunk_url(
             'put_object',
             Params={
                 'Bucket': S3_BUCKET,
-                'Key': s3_key,
-                'ContentType': 'application/octet-stream'
+                'Key': s3_key
             },
             ExpiresIn=600
         )

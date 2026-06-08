@@ -400,7 +400,7 @@ export default function Dashboard({ logout }) {
 
                 // Push shard raw chunk directly into AWS infrastructure array edge
                 await axios.put(upload_url, fileChunk, {
-                    headers: { "Content-Type": "application/octet-stream" }
+                    headers: { "Content-Type": "" }
                 });
 
                 // Update real-time fluid progression bar states
