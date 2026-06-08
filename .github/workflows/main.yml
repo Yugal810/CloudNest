@@ -1,8 +1,8 @@
-name: Storage System CI
+name: CloudNest
 
 on:
   push:
-    branches: [ "main" ]  # Run this every time you push to the main branch
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
@@ -22,8 +22,9 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r backend/requirements.txt
+        if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
 
-    - name: Run a simple Check
+    - name: Compile and Lint Check (Catch Syntax Errors)
       run: |
-        python -c "print('The backend started and dependencies are correct!')"
+        # This compiles all python files in your backend folder to catch raw syntax errors/typos
+        python -m compileall backend/
