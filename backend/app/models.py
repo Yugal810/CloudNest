@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, BigInteger, String, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, backref
 from .database import Base
 import uuid
@@ -38,7 +38,7 @@ class File(Base):
     filename = Column(String)
     owner_id = Column(Integer, ForeignKey("users.id"))
     folder_id = Column(Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=True)
-    size = Column(Integer, nullable=True)
+    size = Column(BigInteger, nullable=True)
     mime_type = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

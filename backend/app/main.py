@@ -28,11 +28,20 @@ models.Base.metadata.create_all(bind=engine)
 
 def _ensure_schema_columns():
     inspector = inspect(engine)
-    if "files" in inspector.get_table_names():
-        column_names = {col["name"] for col in inspector.get_columns("files")}
-        if "mime_type" not in column_names:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE files ADD COLUMN mime_type VARCHAR"))
+    if "files" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"]: col for col in inspector.get_columns("files")}
+
+    with engine.begin() as conn:
+        if "mime_type" not in columns:
+            conn.execute(text("ALTER TABLE files ADD COLUMN mime_type VARCHAR"))
+
+        size_col = columns.get("size")
+        if size_col is not None:
+            type_name = size_col["type"].__class__.__name__.upper()
+            if type_name in {"INTEGER", "INT", "INT4"}:
+                conn.execute(text("ALTER TABLE files ALTER COLUMN size TYPE BIGINT"))
 
 _ensure_schema_columns()
 
