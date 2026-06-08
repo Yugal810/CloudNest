@@ -146,13 +146,16 @@ def generate_chunk_url(
             ExpiresIn=600
         )
 
-        # Log chunk referencing directly to the DB table record
-        db_chunk = models.FileChunk(
-            file_id=db_file.id, 
-            chunk_index=request.chunk_index, 
-            node=node
-        )
-        db.add(db_chunk)
+        existing = db.query(models.FileChunk).filter(
+            models.FileChunk.file_id == db_file.id,
+            models.FileChunk.chunk_index == request.chunk_index,
+        ).first()
+        if not existing:
+            db.add(models.FileChunk(
+                file_id=db_file.id,
+                chunk_index=request.chunk_index,
+                node=node,
+            ))
         db.commit()
 
         return {"upload_url": presigned_url, "node": node}

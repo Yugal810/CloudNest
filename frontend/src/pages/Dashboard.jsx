@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import api from '../api';
+import axios from 'axios';
 import { getStoredTheme, setStoredTheme, applyTheme } from '../lib/theme';
 import {
     getCompactUi,
@@ -15,8 +16,20 @@ import {
   Folder, HardDrive, LogOut, Plus, Upload,
   ChevronRight, Trash2, Download, Loader2,
   ChevronDown, Search, X, Share2, Move, FolderPlus, Copy, ExternalLink, AlertTriangle, ArrowRight, CheckSquare, Square,
-  Image, Video, FileText, Code, File
+  Image, Video, FileText, Code, File, CheckCircle2, XCircle
 } from 'lucide-react';
+
+const getChunkSize = (fileSize) => {
+    if (fileSize < 50 * 1024 * 1024) return 1 * 1024 * 1024;
+    if (fileSize < 500 * 1024 * 1024) return 5 * 1024 * 1024;
+    return 16 * 1024 * 1024;
+};
+
+const formatFileSize = (bytes) => {
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
 
 export default function Dashboard({ logout }) {
     const [folders, setFolders] = useState([]);
@@ -25,8 +38,12 @@ export default function Dashboard({ logout }) {
     const [selectedFolder, setSelectedFolder] = useState(null);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
-    const [uploadProgress, setUploadProgress] = useState(0); // Real-time upload percentage
-    const [uploadingSize, setUploadingSize] = useState(""); // Readable string representation of file size
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadingSize, setUploadingSize] = useState("");
+    const [uploadingFileName, setUploadingFileName] = useState("");
+    const [uploadNotice, setUploadNotice] = useState(null);
+    const uploadAbortRef = useRef(null);
+    const activeUploadFileIdRef = useRef(null);
     const [showProfile, setShowProfile] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     /** When true, search results dropdown is visible (hidden on outside click) */
@@ -110,6 +127,75 @@ export default function Dashboard({ logout }) {
     useEffect(() => {
         document.documentElement.setAttribute("data-density", compactUi ? "compact" : "comfortable");
     }, [compactUi]);
+
+    const showUploadNotice = useCallback((type, message, title) => {
+        setUploadNotice({ type, message, title });
+        if (type === "success") {
+            window.setTimeout(() => setUploadNotice(null), 5000);
+        }
+    }, []);
+
+    const isUploadCancelled = (err) =>
+        err?.name === "CanceledError" || err?.code === "ERR_CANCELED" || axios.isCancel?.(err);
+
+    const cleanupPartialUpload = async (fileId) => {
+        if (!fileId) return;
+        try {
+            await api.delete(`/delete/${fileId}`);
+        } catch {
+            /* best-effort cleanup */
+        }
+    };
+
+    const cancelUpload = () => {
+        uploadAbortRef.current?.abort();
+    };
+
+    const uploadSingleChunk = async (fileId, chunkIndex, fileChunk, signal) => {
+        const maxRetries = 3;
+        let lastError = null;
+
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            if (signal?.aborted) throw new axios.CanceledError("Upload cancelled");
+
+            try {
+                const urlResponse = await api.post(
+                    "/upload/chunk-url",
+                    { file_id: fileId, chunk_index: chunkIndex },
+                    { signal, timeout: 0 }
+                );
+                const { upload_url } = urlResponse.data;
+
+                await axios.put(upload_url, fileChunk, {
+                    signal,
+                    timeout: 0,
+                    headers: { "Content-Type": "application/octet-stream" },
+                });
+                return;
+            } catch (directErr) {
+                if (isUploadCancelled(directErr)) throw directErr;
+                lastError = directErr;
+
+                try {
+                    const formData = new FormData();
+                    formData.append("file_id", String(fileId));
+                    formData.append("chunk_index", String(chunkIndex));
+                    formData.append("chunk", fileChunk, `chunk_${chunkIndex}`);
+
+                    await api.post("/upload/chunk", formData, { signal, timeout: 0 });
+                    return;
+                } catch (proxyErr) {
+                    if (isUploadCancelled(proxyErr)) throw proxyErr;
+                    lastError = proxyErr;
+                    if (attempt < maxRetries - 1) {
+                        await new Promise((resolve) => window.setTimeout(resolve, 1000 * (attempt + 1)));
+                    }
+                }
+            }
+        }
+
+        throw lastError;
+    };
 
     const handleThemeMode = (mode) => {
         setStoredTheme(mode);
@@ -362,61 +448,69 @@ export default function Dashboard({ logout }) {
         const file = e.target.files[0];
         if (!file) return;
 
+        const controller = new AbortController();
+        uploadAbortRef.current = controller;
+        activeUploadFileIdRef.current = null;
+
         setUploading(true);
         setUploadProgress(0);
+        setUploadingFileName(file.name);
+        setUploadingSize(formatFileSize(file.size));
 
-        // Track readable string sizing
-        const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
-        setUploadingSize(`${sizeInMB} MB`);
-
-        const CHUNK_SIZE = 1024 * 1024; // Strict 1MB Shard slices
+        const CHUNK_SIZE = getChunkSize(file.size);
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        let fileId = null;
 
         try {
-            // Step 1: Tell backend to map an isolated database file record with mime_type tracking
             const initResponse = await api.post('/upload/init', {
                 filename: file.name,
                 size: file.size,
                 mime_type: file.type || "application/octet-stream",
                 folder_id: selectedFolder ? selectedFolder.id : null
-            });
+            }, { signal: controller.signal });
 
-            const { file_id } = initResponse.data;
+            fileId = initResponse.data.file_id;
+            activeUploadFileIdRef.current = fileId;
 
-            // Step 2: Loop chunks, parse slices, stream straight to AWS S3 bypassing Render disk thresholds
             for (let i = 0; i < totalChunks; i++) {
                 const start = i * CHUNK_SIZE;
                 const end = Math.min(start + CHUNK_SIZE, file.size);
-                const fileChunk = file.slice(start, end); // Local client-side browser slicing execution
+                const fileChunk = file.slice(start, end);
 
-                // Stream shard through backend to S3 (avoids browser CORS blocks on presigned URLs)
-                const formData = new FormData();
-                formData.append("file_id", String(file_id));
-                formData.append("chunk_index", String(i));
-                formData.append("chunk", fileChunk, `chunk_${i}`);
+                await uploadSingleChunk(fileId, i, fileChunk, controller.signal);
 
-                await api.post("/upload/chunk", formData);
-
-                // Update real-time fluid progression bar states
-                const progressPercent = Math.round(((i + 1) / totalChunks) * 100);
-                setUploadProgress(progressPercent);
+                setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
             }
 
+            activeUploadFileIdRef.current = null;
             fetchData();
-            alert("Distributed cluster sharded upload executed successfully!");
-        } catch (err) { 
+            showUploadNotice("success", `"${file.name}" uploaded successfully.`, "Upload complete");
+        } catch (err) {
+            if (isUploadCancelled(err)) {
+                await cleanupPartialUpload(fileId);
+                activeUploadFileIdRef.current = null;
+                showUploadNotice("info", "Your upload was cancelled.", "Upload cancelled");
+                return;
+            }
+
             console.error("High-scale direct upload pipeline collapsed: ", err);
+            await cleanupPartialUpload(fileId);
+            activeUploadFileIdRef.current = null;
+
             const detail = err.response?.data?.detail;
             const message = typeof detail === "string"
                 ? detail
                 : Array.isArray(detail)
                     ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
                     : err.message || "Upload failed.";
-            alert(`Upload failed: ${message}`);
-        } finally { 
+            showUploadNotice("error", message, "Upload failed");
+        } finally {
+            uploadAbortRef.current = null;
             setUploading(false);
             setUploadProgress(0);
             setUploadingSize("");
+            setUploadingFileName("");
+            if (uploadInputRef.current) uploadInputRef.current.value = "";
         }
     };
 
@@ -763,25 +857,41 @@ export default function Dashboard({ logout }) {
                             
                             {/* 📊 UPDATED CONTROLS GRID PANEL BLOCK */}
                             <div className="flex w-full flex-col items-end gap-2 sm:w-auto">
-                                <button
-                                    type="button"
-                                    onClick={() => uploadInputRef.current?.click()}
-                                    disabled={uploading}
-                                    className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium text-white transition-colors touch-manipulation min-h-[44px] disabled:cursor-wait disabled:opacity-90 sm:w-auto sm:min-h-0 bg-[#1a73e8] hover:bg-[#1557b0] active:bg-[#1557b0] shadow-sm disabled:bg-[#bdc1c6]"
-                                >
-                                    {uploading ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} strokeWidth={2} />}
-                                    {uploading ? `Uploading ${uploadingSize}...` : "Add files"}
-                                </button>
-                                
-                                {/* 📊 RUNTIME VISUAL PERCENTAGE PROGRESS TRACKER */}
+                                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                                    <button
+                                        type="button"
+                                        onClick={() => uploadInputRef.current?.click()}
+                                        disabled={uploading}
+                                        className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium text-white transition-colors touch-manipulation min-h-[44px] disabled:cursor-wait disabled:opacity-90 sm:w-auto sm:min-h-0 bg-[#1a73e8] hover:bg-[#1557b0] active:bg-[#1557b0] shadow-sm disabled:bg-[#bdc1c6]"
+                                    >
+                                        {uploading ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} strokeWidth={2} />}
+                                        {uploading ? `Uploading ${uploadingSize}...` : "Add files"}
+                                    </button>
+                                    {uploading && (
+                                        <button
+                                            type="button"
+                                            onClick={cancelUpload}
+                                            className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-md border border-[#dadce0] bg-white px-4 py-2.5 text-sm font-medium text-[#d93025] transition-colors hover:bg-[#fce8e6] touch-manipulation min-h-[44px] sm:w-auto sm:min-h-0"
+                                        >
+                                            <X size={18} strokeWidth={2} />
+                                            Cancel upload
+                                        </button>
+                                    )}
+                                </div>
+
                                 {uploading && (
-                                    <div className="w-full sm:w-64 mt-1 bg-gray-100 rounded-full h-2.5 overflow-hidden border border-gray-200 shadow-inner">
-                                        <div 
-                                            className="bg-gradient-to-r from-blue-500 to-[#1a73e8] h-2.5 rounded-full transition-all duration-300 ease-out animate-pulse"
-                                            style={{ width: `${uploadProgress}%` }}
-                                        ></div>
-                                        <span className="text-[10px] text-[#5f6368] font-bold mt-1 block text-right tabular-nums">
-                                            {uploadProgress}% Complete
+                                    <div className="w-full sm:w-72 rounded-lg border border-[#dadce0] bg-[#f8f9fa] p-3">
+                                        <p className="mb-2 truncate text-xs font-medium text-[#202124]" title={uploadingFileName}>
+                                            {uploadingFileName}
+                                        </p>
+                                        <div className="h-2.5 overflow-hidden rounded-full border border-gray-200 bg-gray-100 shadow-inner">
+                                            <div
+                                                className="h-2.5 rounded-full bg-gradient-to-r from-blue-500 to-[#1a73e8] transition-all duration-300 ease-out"
+                                                style={{ width: `${uploadProgress}%` }}
+                                            />
+                                        </div>
+                                        <span className="mt-1.5 block text-right text-[10px] font-bold tabular-nums text-[#5f6368]">
+                                            {uploadProgress}% complete
                                         </span>
                                     </div>
                                 )}
@@ -1077,6 +1187,50 @@ export default function Dashboard({ logout }) {
                             <button type="button" onClick={() => { setIsDeleteModalOpen(false); setDeleteTargets([]); }} className="w-full sm:w-auto px-4 py-2 rounded-md border text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
                             <button type="button" onClick={handleDelete} className="w-full sm:w-auto px-4 py-2 rounded-md bg-[#d93025] text-white text-sm font-medium hover:bg-[#c5221f]">Delete</button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- UPLOAD NOTICE TOAST --- */}
+            {uploadNotice && (
+                <div className="fixed bottom-6 left-1/2 z-[130] w-[min(92vw,420px)] -translate-x-1/2 pb-[env(safe-area-inset-bottom)]">
+                    <div
+                        role="status"
+                        className={`flex items-start gap-3 rounded-xl border bg-white p-4 shadow-xl ${
+                            uploadNotice.type === "success"
+                                ? "border-[#ceead6]"
+                                : uploadNotice.type === "error"
+                                    ? "border-[#f5c6c2]"
+                                    : "border-[#dadce0]"
+                        }`}
+                    >
+                        <div className={`mt-0.5 shrink-0 rounded-full p-1.5 ${
+                            uploadNotice.type === "success"
+                                ? "bg-[#e6f4ea] text-[#137333]"
+                                : uploadNotice.type === "error"
+                                    ? "bg-[#fce8e6] text-[#d93025]"
+                                    : "bg-[#e8f0fe] text-[#1a73e8]"
+                        }`}>
+                            {uploadNotice.type === "success" ? (
+                                <CheckCircle2 size={18} strokeWidth={2} />
+                            ) : uploadNotice.type === "error" ? (
+                                <XCircle size={18} strokeWidth={2} />
+                            ) : (
+                                <AlertTriangle size={18} strokeWidth={2} />
+                            )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-[#202124]">{uploadNotice.title}</p>
+                            <p className="mt-0.5 text-sm text-[#5f6368] break-words">{uploadNotice.message}</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setUploadNotice(null)}
+                            className="shrink-0 rounded-full p-1.5 text-[#5f6368] transition-colors hover:bg-[#f1f3f4]"
+                            aria-label="Dismiss"
+                        >
+                            <X size={16} />
+                        </button>
                     </div>
                 </div>
             )}
