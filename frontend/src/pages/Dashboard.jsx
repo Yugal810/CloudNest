@@ -16,7 +16,7 @@ import {
   Folder, HardDrive, LogOut, Plus, Upload,
   ChevronRight, Trash2, Download, Loader2,
   ChevronDown, Search, X, Share2, Move, FolderPlus, Copy, ExternalLink, AlertTriangle, ArrowRight, CheckSquare, Square,
-  Image, Video, FileText, Code, File, CheckCircle2, XCircle
+  Image, Video, FileText, Code, File, CheckCircle2, XCircle, Menu
 } from 'lucide-react';
 
 const getChunkSize = (fileSize) => {
@@ -42,6 +42,7 @@ export default function Dashboard({ logout }) {
     const [uploadingSize, setUploadingSize] = useState("");
     const [uploadingFileName, setUploadingFileName] = useState("");
     const [uploadNotice, setUploadNotice] = useState(null);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const uploadAbortRef = useRef(null);
     const activeUploadFileIdRef = useRef(null);
     const [showProfile, setShowProfile] = useState(false);
@@ -127,6 +128,17 @@ export default function Dashboard({ logout }) {
     useEffect(() => {
         document.documentElement.setAttribute("data-density", compactUi ? "compact" : "comfortable");
     }, [compactUi]);
+
+    useEffect(() => {
+        if (!sidebarOpen) return;
+        const onKey = (e) => { if (e.key === "Escape") setSidebarOpen(false); };
+        document.addEventListener("keydown", onKey);
+        document.body.style.overflow = "hidden";
+        return () => {
+            document.removeEventListener("keydown", onKey);
+            document.body.style.overflow = "";
+        };
+    }, [sidebarOpen]);
 
     const showUploadNotice = useCallback((type, message, title) => {
         setUploadNotice({ type, message, title });
@@ -584,6 +596,15 @@ export default function Dashboard({ logout }) {
                 Skip to content
             </a>
 
+            {sidebarOpen && (
+                <button
+                    type="button"
+                    className="fixed inset-0 z-40 bg-black/40 md:hidden touch-manipulation"
+                    aria-label="Close menu"
+                    onClick={() => setSidebarOpen(false)}
+                />
+            )}
+
             <DriveSidebar
                 onHome={goDriveHome}
                 onNewFolder={() => {
@@ -597,10 +618,20 @@ export default function Dashboard({ logout }) {
                 onOpenSettings={() => setSettingsOpen(true)}
                 onOpenShortcuts={() => setShortcutsOpen(true)}
                 onOpenHelp={() => setHelpOpen(true)}
+                mobileOpen={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
             />
 
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-w-0 flex-1 flex-col w-full">
                 <header className="sticky top-0 z-40 flex min-h-14 items-center gap-1 border-b border-[var(--drive-border)] bg-[var(--drive-header)] px-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:gap-2 sm:px-4">
+                    <button
+                        type="button"
+                        onClick={() => setSidebarOpen(true)}
+                        className="inline-flex shrink-0 items-center justify-center rounded-lg p-2 text-[var(--drive-text)] transition-colors hover:bg-[var(--drive-hover)] touch-manipulation min-h-[44px] min-w-[44px] md:hidden"
+                        aria-label="Open menu"
+                    >
+                        <Menu size={22} strokeWidth={2} />
+                    </button>
                     <div ref={searchBarRef} id="drive-search-section" className="relative z-40 min-w-0 flex-1 px-0.5 sm:px-2">
                         <label htmlFor="drive-search" className="sr-only">Search files and folders</label>
                         <div className="relative mx-auto flex w-full max-w-2xl items-center rounded-xl border border-[var(--drive-border)] bg-[var(--drive-surface)] shadow-[var(--drive-shadow)] transition focus-within:border-[var(--drive-primary)] focus-within:ring-2 focus-within:ring-[var(--drive-primary)]/20">
@@ -610,7 +641,7 @@ export default function Dashboard({ logout }) {
                                 type="search"
                                 enterKeyHint="search"
                                 autoComplete="off"
-                                placeholder="Search all folders and files…"
+                                placeholder="Search files…"
                                 value={searchQuery}
                                 onChange={(e) => {
                                     const v = e.target.value;
@@ -741,24 +772,26 @@ export default function Dashboard({ logout }) {
 
                 <main id="main-content" tabIndex={-1} className="drive-main-padding mx-auto w-full min-w-0 max-w-[1200px] flex-1 overflow-x-hidden outline-none">
                 <input ref={uploadInputRef} type="file" className="hidden" onChange={handleUpload} disabled={uploading} aria-hidden />
-                <section ref={overviewRef} id="drive-overview" className="mb-6 sm:mb-8 scroll-mt-24 rounded-lg border border-[#dadce0] bg-white shadow-sm p-4 sm:p-8">
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                <section ref={overviewRef} id="drive-overview" className="mb-4 sm:mb-8 scroll-mt-24 rounded-lg border border-[#dadce0] bg-white shadow-sm p-4 sm:p-8">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 sm:gap-6">
                         <div>
-                            <h1 className="text-2xl sm:text-[28px] font-normal text-[#202124] tracking-tight">My Space</h1>
-                            <p className="text-sm text-[#5f6368] mt-1">Store, organize, and share your files.</p>
+
+                            <h1 className="text-xl sm:text-[28px] font-normal text-[#202124] tracking-tight">My Drive</h1>
+                            <p className="text-xs sm:text-sm text-[#5f6368] mt-1">Store, organize, and share your files.</p>
+
                         </div>
-                        <div className="flex flex-wrap gap-3">
-                            <div className="min-w-[100px] rounded-lg border border-[#dadce0] bg-[#f8f9fa] px-4 py-3">
+                        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3">
+                            <div className="min-w-0 rounded-lg border border-[#dadce0] bg-[#f8f9fa] px-3 py-2.5 sm:min-w-[100px] sm:px-4 sm:py-3">
                                 <p className="text-xs text-[#5f6368] font-medium">Folders</p>
                                 <p className="text-xl font-normal text-[#202124] tabular-nums">{folders.length}</p>
                             </div>
-                            <div className="min-w-[100px] rounded-lg border border-[#dadce0] bg-[#f8f9fa] px-4 py-3">
+                            <div className="min-w-0 rounded-lg border border-[#dadce0] bg-[#f8f9fa] px-3 py-2.5 sm:min-w-[100px] sm:px-4 sm:py-3">
                                 <p className="text-xs text-[#5f6368] font-medium">Files</p>
-                                <p className="text-xl font-normal text-[#202124] tabular-nums">{files.length}</p>
+                                <p className="text-lg sm:text-xl font-normal text-[#202124] tabular-nums">{files.length}</p>
                             </div>
-                            <div className="min-w-[140px] rounded-lg border border-[#dadce0] bg-[#f8f9fa] px-4 py-3">
+                            <div className="min-w-0 rounded-lg border border-[#dadce0] bg-[#f8f9fa] px-3 py-2.5 sm:min-w-[140px] sm:px-4 sm:py-3">
                                 <p className="text-xs text-[#5f6368] font-medium">Location</p>
-                                <p className="text-base font-medium text-[#202124] truncate max-w-[200px]">{selectedFolder?.name || "Home"}</p>
+                                <p className="text-sm sm:text-base font-medium text-[#202124] truncate">{selectedFolder?.name || "Home"}</p>
                             </div>
                         </div>
                     </div>

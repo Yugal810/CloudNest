@@ -12,11 +12,9 @@ import {
     Upload,
     Loader2,
     FolderPlus,
+    X,
 } from "lucide-react";
 
-/**
- * Fixed side navigation — always visible (does not collapse or dismiss).
- */
 export default function DriveSidebar({
     onHome,
     onNewFolder,
@@ -27,11 +25,18 @@ export default function DriveSidebar({
     onOpenSettings,
     onOpenShortcuts,
     onOpenHelp,
+    mobileOpen = false,
+    onClose,
 }) {
+    const wrapAction = (action) => () => {
+        action?.();
+        onClose?.();
+    };
+
     const GhostBtn = ({ onClick, icon: Icon, label, title: t, disabled }) => (
         <button
             type="button"
-            onClick={onClick}
+            onClick={wrapAction(onClick)}
             disabled={disabled}
             title={t || label}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-[var(--drive-text)] transition-colors hover:bg-[var(--drive-hover)] touch-manipulation min-h-[44px] disabled:cursor-not-allowed disabled:opacity-45"
@@ -44,7 +49,7 @@ export default function DriveSidebar({
     const NavBtn = ({ onClick, icon: Icon, label, primary, title: t, disabled }) => (
         <button
             type="button"
-            onClick={onClick}
+            onClick={wrapAction(onClick)}
             disabled={disabled}
             title={t || label}
             className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors touch-manipulation min-h-[44px] ${
@@ -69,7 +74,7 @@ export default function DriveSidebar({
                     key={id}
                     type="button"
                     title={label}
-                    onClick={() => onThemeMode(id)}
+                    onClick={wrapAction(() => onThemeMode(id))}
                     className={`flex flex-1 items-center justify-center rounded-md py-2 transition-colors touch-manipulation min-h-[40px] ${
                         themeMode === id
                             ? "bg-[var(--drive-surface)] text-[var(--drive-primary)] shadow-sm"
@@ -85,13 +90,15 @@ export default function DriveSidebar({
 
     return (
         <aside
-            className="flex min-h-dvh w-[240px] shrink-0 flex-col border-r border-[var(--drive-border)] bg-[var(--drive-header)] shadow-[var(--drive-shadow)] sm:w-[260px] md:w-[272px]"
+            className={`fixed inset-y-0 left-0 z-50 flex min-h-dvh w-[min(88vw,280px)] max-w-[280px] shrink-0 flex-col border-r border-[var(--drive-border)] bg-[var(--drive-header)] shadow-[var(--drive-shadow)] transition-transform duration-300 ease-out md:static md:z-auto md:w-[272px] md:max-w-none md:translate-x-0 ${
+                mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+            }`}
             aria-label="Side navigation"
         >
-            <div className="flex items-center gap-2 border-b border-[var(--drive-border)] px-3 py-3">
+            <div className="flex items-center gap-2 border-b border-[var(--drive-border)] px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
                 <button
                     type="button"
-                    onClick={onHome}
+                    onClick={wrapAction(onHome)}
                     className="flex min-w-0 flex-1 items-center gap-2 rounded-lg p-1.5 text-left outline-none ring-[var(--drive-focus-ring)] focus-visible:ring-2"
                     title="CloudNest — Home"
                 >
@@ -101,6 +108,14 @@ export default function DriveSidebar({
                     <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-semibold tracking-tight text-[var(--drive-text)]">CloudNest</p>
                     </div>
+                </button>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-lg p-2 text-[var(--drive-text-secondary)] transition-colors hover:bg-[var(--drive-hover)] md:hidden touch-manipulation min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                    aria-label="Close menu"
+                >
+                    <X size={20} strokeWidth={2} />
                 </button>
             </div>
 
@@ -117,7 +132,7 @@ export default function DriveSidebar({
                 />
                 <button
                     type="button"
-                    onClick={onAddFiles}
+                    onClick={wrapAction(onAddFiles)}
                     disabled={uploading}
                     title="Add files"
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-[var(--drive-text)] transition-colors hover:bg-[var(--drive-hover)] touch-manipulation min-h-[44px] disabled:cursor-wait disabled:opacity-60"
