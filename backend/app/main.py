@@ -14,13 +14,13 @@ origins = [
     "https://distributed-file-storage-1-amo7.onrender.com", # Your production URL
 ]
 
-# 2. Add the Middleware
+# 2. Add the Middleware with Dynamic Allowed Origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origin_regex="https://.*\.onrender\.com|http://localhost:5173|http://127.0.0.1:5173",
     allow_credentials=True,
-    allow_methods=["*"], # Allows GET, POST, DELETE, etc.
-    allow_headers=["*"], # Allows Authorization headers
+    allow_methods=["*"], 
+    allow_headers=["*"], 
 )
 
 # Create tables and apply lightweight schema patches for existing deployments
