@@ -1172,7 +1172,7 @@ export default function Dashboard({ logout }) {
                             <div className="max-h-64 overflow-y-auto space-y-1">
                                 <button type="button" onClick={() => selectMoveDestination(null, "Home")} className="w-full flex items-center gap-3 p-3 hover:bg-[#e8f0fe] rounded-lg border border-dashed text-left">
                                     <HardDrive className="text-[#1a73e8]" size={20} />
-                                    <span className="text-sm font-medium text-[#202124]">My Drive (Home)</span>
+                                    <span className="text-sm font-medium text-[#202124]">My Space (Home)</span>
                                 </button>
                                 {folders.filter(f => f.name.toLowerCase().includes(folderSearch.toLowerCase())).map(folder => (
                                     <button type="button" key={folder.id} onClick={() => selectMoveDestination(folder.id, folder.name)} className="w-full flex items-center gap-3 p-3 hover:bg-[#f1f3f4] rounded-lg text-left group">
